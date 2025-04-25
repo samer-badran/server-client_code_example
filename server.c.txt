@@ -1,0 +1,280 @@
+
+#include <stdio.h> 
+#include <netdb.h> 
+#include <netinet/in.h> 
+#include <arpa/inet.h>
+#include <stdlib.h> 
+#include <string.h> 
+#include <sys/socket.h> 
+#include <sys/types.h> 
+#include <unistd.h> 
+#include <ctype.h>
+#include <signal.h>
+#include <sys/wait.h>
+#include <errno.h>
+#include <time.h>  
+#define BUFFER_SIZE 4096   
+#define MAX_CLIENTS 4
+#define LOG_FILE "client_requests.log"  // Define the log file path
+int active_clients = 0;  // Track active clients
+
+void sig_chld(int signo)
+{ 
+	pid_t pid;
+	int stat;
+	while ( (pid = waitpid(-1, &stat, WNOHANG)) > 0)
+	printf("child %d terminated\n", pid);
+	 active_clients--; //decrement the number of client when a child is terminated
+	return;
+}
+
+// Function to log client requests
+void log_request(const char *client_ip, int operation, int success) {
+    FILE *log_file = fopen(LOG_FILE, "a");
+    if (!log_file) {
+        perror("Error opening log file");
+        return;
+    }
+
+    // Get current date and time
+    time_t now = time(NULL);
+    char *timestamp = ctime(&now);
+    timestamp[strcspn(timestamp, "\n")] = '\0';  // Remove newline character
+
+    // Write log entry
+    fprintf(log_file, "[%s] Client: %s, Operation: %d, Success: %d\n",
+            timestamp, client_ip, operation, success);
+    fclose(log_file);
+}
+//function to handle client's requests
+void fun(int client_socket, struct sockaddr_in client_addr) {
+    char buffer[BUFFER_SIZE];
+    char response[BUFFER_SIZE];
+    int operation, success = 0;
+
+    while (1) {
+        memset(buffer, 0, BUFFER_SIZE);
+        memset(response, 0, BUFFER_SIZE);
+
+        // Receive request from client
+        ssize_t received = read(client_socket, buffer, BUFFER_SIZE);
+    if (received <= 0) {
+    printf("Client disconnected: %s:%d\n",
+           inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+    break;
+}
+
+        // separate the operation and string from the received message
+        sscanf(buffer, "%d %[^\n]", &operation, response);
+
+       
+        // Process the operation
+        char result[BUFFER_SIZE] = {0} ;
+        switch (operation) {
+            case 1: { // Count words
+            // Copy response into result to preserve it 
+            strncpy(result, response, BUFFER_SIZE - 1); 
+                int word_count = 0;
+                char *token = strtok(response, " ");
+                while (token) {
+                    word_count++;
+                    token = strtok(NULL, " ");
+                }
+                
+                snprintf(buffer,BUFFER_SIZE, "OP1(%s) = %d",result, word_count);
+                success = 1;
+                
+                break;
+            }
+            case 2: { // Count vowels
+                int vowels = 0;
+                for (int i = 0; response[i]; i++) {
+                    char c = tolower(response[i]);
+                    if (c == 'a' || c == 'e' || c == 'i' || c == 'o' || c == 'u') {
+                        vowels++;
+                    }
+                }
+                snprintf(buffer, BUFFER_SIZE,"OP2(%s) = %d",response, vowels);
+                success = 1;
+                
+                break;
+            }
+            case 3: { // Count non-alphanumeric characters
+                int non_alnum = 0;
+                for (int i = 0; response[i]; i++) {
+//isalnum built-in function to check for number or alphabetic  
+                    if (!isalnum(response[i]) && !isspace(response[i])) {
+                        non_alnum++;
+                    }
+                }
+                snprintf(buffer, BUFFER_SIZE, "OP3(%s) = %d",response, non_alnum);
+                success = 1;
+                
+                break;
+            }
+            case 4: { // Find longest word
+            // Copy response into result to preserve it
+            strncpy(result, response, BUFFER_SIZE - 1);
+                char *token = strtok(response, " ");
+                char longest[BUFFER_SIZE] = {0};
+                while (token) {
+                    if (strlen(token) > strlen(longest)) {
+                        strncpy(longest, token, BUFFER_SIZE);
+                    }
+                    token = strtok(NULL, " ");
+                }
+               snprintf(buffer, BUFFER_SIZE, "OP4(%s) = %s",result, longest);
+                success = 1;
+                
+              
+                break;
+            }
+            case 5: { // Find repeated words
+		char *words[BUFFER_SIZE] = {0};
+		int word_count = 0;
+		char repeated[BUFFER_SIZE] = {0};
+		// Tracks if a word is already counted as repeated
+		int is_repeated[BUFFER_SIZE] = {0};  
+
+// Copy response into result to preserve it
+            strncpy(result, response, BUFFER_SIZE - 1);
+// Tokenize input string
+char *token = strtok(response, " ");
+while (token) {
+    words[word_count++] = token;
+    token = strtok(NULL, " ");
+}
+
+// Check for repeated words
+for (int i = 0; i < word_count; i++) {
+    if (is_repeated[i]) {
+        continue;  // Skip words already added to 'repeated'
+    }
+    for (int j = i + 1; j < word_count; j++) {
+        if (strcmp(words[i], words[j]) == 0) {
+            // Add the repeated word only once
+            if (!is_repeated[i]) {
+                strcat(repeated, words[i]);
+                strcat(repeated, " ");
+                is_repeated[i] = 1;  // Mark as added
+            }
+            is_repeated[j] = 1;  // Mark all occurrences
+        }
+    }
+}
+
+
+    snprintf(buffer, BUFFER_SIZE, "OP5(%s) = %s",result, repeated);
+
+}
+            default:
+                snprintf(result, BUFFER_SIZE, "Error: Unsupported operation");
+                success = 0;
+        }
+
+        // Send the result back to the client
+        if (write(client_socket, buffer, strlen(buffer)) < 0) {
+    perror("Error sending request to server");
+    break;
+}
+
+
+        // Log the request
+        log_request(inet_ntoa(client_addr.sin_addr), operation, success);
+    }
+}
+
+
+
+int main(int argc , char **argv) 
+{ 
+	int listenfd, connfd, len; 
+	pid_t pid;
+	struct sockaddr_in servaddr, cli; 
+
+	//if-statement to check usage
+	if (argc != 2) {
+    	printf("usage: %s <Port>\n",argv[0]);
+        exit(1);
+    }
+
+    if (atoi(argv[1]) <= 1023 && atoi(argv[1]) > 0){
+    	printf("Port number is restriced/reserved\n");
+    	exit(1);
+    }
+
+    if (atoi(argv[1]) > 65535 || atoi(argv[1]) < 0){
+    	printf("Port number is out of range\n");
+    	exit(1);
+    }
+
+	// socket create and verification 
+	listenfd = socket(AF_INET, SOCK_STREAM, 0); 
+	if (listenfd == -1) { 
+		printf("socket creation failed...\n"); 
+		exit(1); 
+	} 
+	bzero(&servaddr, sizeof(servaddr)); 
+
+	// assign IP, PORT 
+	servaddr.sin_family = AF_INET; 
+	servaddr.sin_addr.s_addr = htonl(INADDR_ANY); 
+	servaddr.sin_port = htons(atoi(argv[1])); 
+
+	// Binding newly created socket to given IP and verification 
+	if ((bind(listenfd, (struct sockaddr *)&servaddr, sizeof(servaddr))) != 0) { 
+		printf("socket bind failed...\n"); 
+		exit(1); 
+	} 
+
+	// Now server is ready to listen and verification 
+	if ((listen(listenfd, 5)) != 0) { 
+		printf("Listen failed...\n"); 
+		exit(1); 
+	} 
+	len = sizeof(cli); 
+	signal (SIGCHLD, sig_chld);
+	// Accept the data packet from client and verification 
+	for (;;)
+	{
+	// check if the maximum number of clients is reached
+        if (active_clients >= MAX_CLIENTS) {
+            printf("Max clients reached. Waiting for a slot...\n");
+            sleep(1);  // wait before accepting new connections
+            continue;
+        }
+		connfd = accept(listenfd, (struct sockaddr*)&cli, &len); 
+		if (connfd < 0) { 
+			if(errno == EINTR)
+				continue;
+			else
+			{
+			perror("server accept failed...\n"); 
+			exit(1); 	
+			}
+		}
+
+		else
+			printf("conected to the server..\n");
+
+		pid = fork();
+		if( pid < 0 )
+			perror("Fork error..");
+
+		if( pid == 0 )
+		{
+			close(listenfd); // child closes listening socket
+// Print IP and port of the connected client
+printf("Connection accepted from %s:%d\n", inet_ntoa(cli.sin_addr), ntohs(cli.sin_port));
+			fun(connfd ,cli); // function for chatting with the server
+			close(connfd); //optional
+			exit(0);
+		}
+
+		// Parent closes connected socket
+		close(connfd);
+		active_clients++;//increment the active client on each child creation
+	}
+	 
+return 0;
+}

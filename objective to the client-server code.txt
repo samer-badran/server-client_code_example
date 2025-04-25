@@ -1,0 +1,53 @@
+Objectives: 
+• Write a complete TCP client-server application.
+• Build a concurrent server.
+• Deal with signals.
+Problem Statement: 
+In this assignment, you will use the socket API to write both a TCP client and a concurrent TCP 
+server programs. The requirements of this distributed application are as follows: 
+• The server accepts a single command line argument: the port number that listens and accepts 
+connections on, e.g., 5001. 
+• The server performs the following five operations on string argument passed to the server by 
+clients, and the server returns the result to the calling client consequently: 
+1. Compute the count of words in the string
+2. Compute the count of vowel letters in the string.
+3. Compute the count of characters that are not letter nor digit in the string.
+4. Find the longest word in the string.
+5. Find the repeated words in the string.
+• In case of unsupported operation, the server replies to the client with an error message. 
+• The server keeps an access log-file for every request, in which it records the associated server’s
+local date and time, the client’s IP address, the requested operation, and whether the operation 
+was carried out successfully or not. 
+• The server can serve up to a maximum of 4 clients concurrently. Other clients should be kept 
+waiting until one or more clients being served finish. 
+• The server (parent) creates a child for each request of the client (you need to print the port and IP
+address of the client). Then it waits for the child to finish processing client’s request. Then, the parent
+prints the process ID of the terminated child. The connection between your client and server should 
+stay open, so that the client can select an operation from the menu. However, instead of using the 
+command exit from the menu, the exit will happen when the user sends the client program the 
+SIGQUIT signal. The handler will print a notifying message (for example, “Good bye”) before the 
+client exits. Note that in all cases, the server is kept running.
+ 
+• The client accepts three command line arguments: 
+– The server IP address, e.g., 127.0.0.1, 
+– The server port number, e.g., 5001, and
+– A name of file to read the input from, e.g., ./input.txt. The input file contains group of lines.
+lines only.
+•After initiating a TCP connection to the server, the client 
+1. Reads one line from the input file, 
+2. Show the available operations on standard output and Read the selected operation from user.
+3. Sends the request to the server, note: the request contains the line from the file and the 
+operation selected from user.
+4. Prints the result on the standard output, e.g., 
+OP1(Hello! My name is Abdullah.) = 5
+OP2(Hello! My name is Abdullah.) = 8
+OP3(Hello! My name is Abdullah.) = 2
+OP4(Hello! My name is Abdullah.) = Abdullah
+OP5(Hello! My name is Abdullah.) = 
+Unsupported Operation
+5. Repeats steps 1–4 until the end of file
+• If the user selects an operation that is not exist, the server returns an error message to the client, 
+which in its turn prints this on the standard output. For example, the user select 10 or -3, the server
+must return an error message, e.g., “Unsupported Operation” to the client.
+• The client sends multiple requests (i.e., corresponding to multiple lines in the file), and receives 
+the associated results on a single TCP connection with the server. 
